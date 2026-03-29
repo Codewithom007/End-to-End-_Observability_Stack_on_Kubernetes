@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  namespace: apps
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+      annotations:
+        prometheus.io/scrape: 'true'   # Prometheus scrapes this pod
+        prometheus.io/port: '8080'
+        prometheus.io/path: '/metrics'
+    spec:
+      containers:
+        - name: order-service
+          image: your-registry/order-service:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: INVENTORY_URL
+              value: http://inventory-service.apps.svc.cluster.local:8081
+            - name: OTEL_SERVICE_NAME
+              value: order-service
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://jaeger.tracing.svc.cluster.local:4317
+          resources:
+            requests: { memory: 128Mi, cpu: 100m }
+            limits:   { memory: 256Mi, cpu: 200m }
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 30
+          readinessProbe:
+            httpGet: { path: /ready, port: 8080 }
+            initialDelaySeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: apps
+spec:
+  selector:
+    app: order-service
+  ports:
+    - port: 8080

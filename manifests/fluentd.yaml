@@ -1,0 +1,79 @@
+# ── Part 1: RBAC (Fluentd needs to read pod and namespace metadata) ──
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fluentd
+  namespace: logging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fluentd
+rules:
+  - apiGroups: ['']
+    resources: ['pods', 'namespaces']
+    verbs: ['get', 'list', 'watch']
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fluentd
+roleRef:
+  kind: ClusterRole
+  name: fluentd
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+  - kind: ServiceAccount
+    name: fluentd
+    namespace: logging
+# ── Part 2: DaemonSet ──
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluentd
+  namespace: logging
+spec:
+  selector:
+    matchLabels:
+      app: fluentd
+  template:
+    metadata:
+      labels:
+        app: fluentd
+    spec:
+      serviceAccountName: fluentd
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+      containers:
+        - name: fluentd
+          image: fluent/fluentd-kubernetes-daemonset:v1-debian-elasticsearch
+          env:
+            - name: FLUENT_ELASTICSEARCH_HOST
+              value: 'elasticsearch.logging.svc.cluster.local'
+            - name: FLUENT_ELASTICSEARCH_PORT
+              value: '9200'
+            - name: FLUENT_ELASTICSEARCH_SCHEME
+              value: 'http'
+            - name: FLUENT_ELASTICSEARCH_INDEX_NAME
+              value: 'kubernetes-logs'
+            - name: FLUENT_ELASTICSEARCH_SSL_VERIFY
+              value: 'false'
+          resources:
+            limits: { memory: 512Mi }
+            requests: { cpu: 100m, memory: 200Mi }
+          volumeMounts:
+            - name: varlog
+              mountPath: /var/log
+            - name: containers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: varlog
+          hostPath: { path: /var/log }
+        - name: containers
+          hostPath: { path: /var/lib/docker/containers }
+ 
